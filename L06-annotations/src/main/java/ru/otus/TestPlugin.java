@@ -4,59 +4,62 @@ import java.lang.annotation.Annotation;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.util.*;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import ru.otus.annotation.After;
 import ru.otus.annotation.Before;
 import ru.otus.annotation.Test;
 
 @SuppressWarnings({"rawtypes", "unchecked"})
 public class TestPlugin {
-    private static final HashSet<Class> testAnnotations =
+    private static final Logger logger = LoggerFactory.getLogger(TestPlugin.class);
+
+    private static final Set<Class> TEST_ANNOTATIONS =
             new HashSet<>(Arrays.asList(Test.class, After.class, Before.class));
+    private static int testPass = 0;
+    private static int testFailed = 0;
 
     public static void start(Class testClass) {
+        logger.info("starting tests");
         var methods = filterMethods(testClass.getDeclaredMethods());
-        checkTestAnnotations(methods);
-        var tests = methods.get(Test.class);
+        var tests = methods.getOrDefault(Test.class, Collections.emptyList());
         List<Method> beforeMethods = methods.get(Before.class);
         List<Method> afterMethods = methods.get(After.class);
-        for (var test : tests) {
-            var instance = createTestInstance(testClass);
-            invokeBeforeAndAfter(instance, beforeMethods);
-            invoke(instance, test);
-            invokeBeforeAndAfter(instance, afterMethods);
+        if (!tests.isEmpty()) {
+            for (var test : tests) {
+                var instance = createTestInstance(testClass);
+                invokeBeforeAndAfter(instance, beforeMethods);
+                invoke(instance, test, true);
+                invokeBeforeAndAfter(instance, afterMethods);
+            }
         }
-    }
-
-    private static void checkTestAnnotations(HashMap<Class, List<Method>> methods) {
-        if (methods.isEmpty()) {
-            throw new RuntimeException("No any test annotations found");
-        }
-        if (methods.getOrDefault(Before.class, null) == null) {
-            throw new RuntimeException("No before annotations found");
-        }
-        if (methods.getOrDefault(After.class, null) == null) {
-            throw new RuntimeException("No after annotations found");
-        }
-        if (methods.getOrDefault(Test.class, null) == null) {
-            throw new RuntimeException("No test annotations found");
-        }
+        logger.info("total tests: {} | tests passed: {} | tests failed: {}",
+                tests.size(), testPass, testFailed);
     }
 
     private static void invokeBeforeAndAfter(Object instance, List<Method> method) {
-        method.forEach(method1 -> invoke(instance, method1));
+        method.forEach(method1 -> invoke(instance, method1, false));
     }
 
-    private static void invoke(Object instance, Method method) {
+    private static void invoke(Object instance, Method method, Boolean isTest) {
         method.setAccessible(true);
         try {
             method.invoke(instance);
+            if (isTest) {
+                testPass++;
+            }
         } catch (IllegalAccessException | InvocationTargetException e) {
-            System.err.println("Exception class: " + e.getClass().getName());
-            System.err.println("Exception method: " + method.getName());
-            System.err.println("Exception message: " + e.getMessage());
+            logger.error("Exception class: {}", e.getClass().getName());
+            logger.error("Exception method: {}", method.getName());
+            logger.error("Exception message: {}", e.getMessage());
+
             if (e.getCause() != null) {
-                System.err.println("Cause: " + e.getCause().getClass().getName());
-                System.err.println("Cause message: " + e.getCause().getMessage());
+                logger.error("Cause: {}", e.getCause().getClass().getName());
+                logger.error("Cause message: {}", e.getCause().getMessage());
+            }
+            if (isTest) {
+                testFailed++;
             }
         }
     }
@@ -65,20 +68,20 @@ public class TestPlugin {
         try {
             return testClass.getDeclaredConstructor().newInstance();
         } catch (InstantiationException
-                | IllegalAccessException
-                | NoSuchMethodException
-                | InvocationTargetException e) {
-            System.err.println(Arrays.stream(e.getStackTrace()));
+                 | IllegalAccessException
+                 | NoSuchMethodException
+                 | InvocationTargetException e) {
+            logger.error("Failed create instance: {}", e.getMessage(), e);
             throw new RuntimeException(e);
         }
     }
 
-    private static HashMap<Class, List<Method>> filterMethods(Method[] methodsArr) {
-        HashMap<Class, List<Method>> methods = new HashMap<>();
+    private static Map<Class, List<Method>> filterMethods(Method[] methodsArr) {
+        Map<Class, List<Method>> methods = new HashMap<>();
         for (Method method : methodsArr) {
             for (Annotation annotation : method.getAnnotations()) {
                 var inspectedAnnotation = annotation.annotationType();
-                if (testAnnotations.contains(inspectedAnnotation)) {
+                if (TEST_ANNOTATIONS.contains(inspectedAnnotation)) {
                     methods.computeIfAbsent(inspectedAnnotation, k -> new ArrayList<>())
                             .add(method);
                 }
