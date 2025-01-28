@@ -4,7 +4,6 @@ import java.lang.annotation.Annotation;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.util.*;
-
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import ru.otus.annotation.After;
@@ -21,6 +20,8 @@ public class TestPlugin {
     private static int testFailed = 0;
 
     public static void start(Class testClass) {
+        testFailed = 0;
+        testPass = 0;
         logger.info("starting tests");
         var methods = filterMethods(testClass.getDeclaredMethods());
         var tests = methods.getOrDefault(Test.class, Collections.emptyList());
@@ -34,8 +35,7 @@ public class TestPlugin {
                 invokeBeforeAndAfter(instance, afterMethods);
             }
         }
-        logger.info("total tests: {} | tests passed: {} | tests failed: {}",
-                tests.size(), testPass, testFailed);
+        logger.info("total tests: {} | tests passed: {} | tests failed: {}", tests.size(), testPass, testFailed);
     }
 
     private static void invokeBeforeAndAfter(Object instance, List<Method> method) {
